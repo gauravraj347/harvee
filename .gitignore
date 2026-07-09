@@ -1,0 +1,26 @@
+# dependencies
+node_modules/
+**/node_modules/
+
+# next.js
+frontend/.next/
+frontend/out/
+frontend/next-env.d.ts
+
+# builds
+**/dist/
+**/build/
+
+# env files (keep *.example)
+.env
+**/.env
+**/.env*.local
+
+# prisma / docker
+**/*.db
+pgdata/
+
+# misc
+.DS_Store
+*.tsbuildinfo
+npm-debug.log*

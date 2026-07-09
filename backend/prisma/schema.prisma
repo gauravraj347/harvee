@@ -1,0 +1,102 @@
+// Normalized schema for the AI-Powered Student Course Allocation System.
+//
+// Normalization notes:
+//  - Student, Course are the core entities.
+//  - CourseCategoryQuota is a separate table holding one row per (course, category)
+//    reserved-seat count  -> avoids repeating category columns on Course (2NF/3NF).
+//  - StudentPreference is a separate table (one row per priority choice) instead of
+//    prefCourse1/2/3 columns on Student  -> removes repeating groups (1NF) and lets a
+//    student have any number of ranked preferences.
+//  - Allocation holds at most one row per student (unique studentId) -> enforces the
+//    "a student can be allocated only one course" rule at the DB level.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Category {
+  GENERAL
+  OBC
+  SC
+  ST
+}
+
+// Which quota a seat was consumed from during allocation.
+enum SeatType {
+  OPEN // general/open merit seat, available to every category
+  RESERVED // seat reserved for the student's category
+}
+
+model Student {
+  id              Int                 @id @default(autoincrement())
+  name            String
+  marks           Float
+  category        Category
+  applicationDate DateTime            @default(now())
+  createdAt       DateTime            @default(now())
+
+  preferences     StudentPreference[]
+  allocation      Allocation?
+
+  // Merit ordering support: higher marks first, then earlier application date.
+  @@index([marks, applicationDate])
+}
+
+model Course {
+  id          Int                   @id @default(autoincrement())
+  name        String                @unique
+  totalSeats  Int
+  createdAt   DateTime              @default(now())
+
+  quotas      CourseCategoryQuota[]
+  preferences StudentPreference[]
+  allocations Allocation[]
+}
+
+// Reserved seats for a given category within a given course.
+// OPEN seats = Course.totalSeats - sum(reservedSeats over all categories).
+model CourseCategoryQuota {
+  id            Int      @id @default(autoincrement())
+  courseId      Int
+  category      Category
+  reservedSeats Int      @default(0)
+
+  course        Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, category])
+}
+
+// A single ranked course preference for a student (priority 1 = most preferred).
+model StudentPreference {
+  id        Int     @id @default(autoincrement())
+  studentId Int
+  courseId  Int
+  priority  Int // 1, 2, 3, ...
+
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  course    Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, priority]) // one course per priority slot
+  @@unique([studentId, courseId]) // cannot list the same course twice
+  @@index([courseId])
+}
+
+// The result of the allocation run. At most one per student.
+model Allocation {
+  id                 Int      @id @default(autoincrement())
+  studentId          Int      @unique
+  courseId           Int
+  seatType           SeatType
+  preferencePriority Int // which of the student's preferences was fulfilled (1,2,3,...)
+  allocatedAt        DateTime @default(now())
+
+  student            Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  course             Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@index([courseId])
+}
